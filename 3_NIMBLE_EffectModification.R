@@ -14,7 +14,7 @@ library(tidyr)
 
 options(scipen = 999)
 
-setwd("C:/Users/gkonstan/Desktop/COPD_temperature/")
+setwd("E:/Postdoc Imperial/misc/COPDTempSVC/")
 
 
 
@@ -37,7 +37,7 @@ quantile(COPD_dat$temperature, prob = seq(from = .50, to = .95, by = .05))
 
 
 # Here we define thr to be the threshold of the model that minimizes the WAIC on step 1. 
-thr <- 8
+thr <- 7
 x.change <- tmp.quant[thr]
 
 
@@ -99,9 +99,9 @@ model_LT <- nimbleCode(
       O[i] ~ dpois(mu[i])
       
       if(adj){
-        mu[i] <- exp(beta_tmp[Q[i]]*temperature[i] + inprod(beta[1:K.b], X[i,1:K.b]) + u[IDCC[i]])
+        mu[i] <- exp(beta_tmp[Q[i]]*temperature[i] + inprod(beta[1:K.b], X[i,1:K.b]) + u[IDCC[i]] + v[IDREC[i]])
       }else{
-        mu[i] <- exp(beta_tmp[Q[i]]*temperature[i] + u[IDCC[i]])
+        mu[i] <- exp(beta_tmp[Q[i]]*temperature[i] + u[IDCC[i]] + v[IDREC[i]])
       }
       
       
@@ -111,6 +111,10 @@ model_LT <- nimbleCode(
     
     for(j in 1:J){
       u[j] ~ dnorm(0, sd = 100) # the fixed effect to make the Poisson conditional logistic regression
+    }
+    
+    for(h in 1:H){
+      v[h] ~ dnorm(0, sd = sd.par) # to account for recurrent hospitalisations
     }
     
     for (k in 1:2) {
@@ -129,6 +133,9 @@ model_LT <- nimbleCode(
       
     }
     
+    # prior for the hyperpar
+    sd.par ~ dgamma(shape = 1, rate = 2)
+    
     # monitor some nodes of lp and re
     mu_keep[1:3] <- c(mu[1], mu[555], mu[153])
     u_keep[1:3] <- c(u[1], u[100], u[153])
@@ -144,7 +151,7 @@ model_LT <- nimbleCode(
 
 N <- nrow(COPD_dat)
 J <- max(COPD_dat$ID)
-
+H <- max(COPD_dat$ID.rec)
 
 conf.mat <- cbind(
   
@@ -171,7 +178,9 @@ COPD_NIMBLE_constants <- list(
   
   N = N,
   IDCC = COPD_dat$ID,
+  IDREC = COPD_dat$ID.rec,
   J = J,
+  H = H,
   K.b = K.b,
   x.change = x.change, 
   x.sd = sd(COPD_dat$temperature), 
@@ -193,7 +202,9 @@ if(adj == TRUE){
     list(
       beta_tmp = rep(0, times = 2),
       beta = rep(0, K.b),
-      u = rep(-1, times = J)
+      u = rep(-1, times = J),
+      v = rep(0, times = H),
+      sd.par = 0.1
     )
   
   # parameters to monitor
@@ -205,7 +216,9 @@ if(adj == TRUE){
   initials =
     list(
       beta_tmp = rep(0, times = 2),
-      u = rep(-1, times = J)
+      u = rep(-1, times = J),
+      v = rep(0, times = H),
+      sd.par = 0.1
     )
   
   # parameters to monitor

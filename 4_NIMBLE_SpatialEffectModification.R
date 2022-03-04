@@ -20,7 +20,7 @@ library(doBy)
 
 options(scipen = 999)
 
-setwd("C:/Users/gkonstan/Desktop/COPD_temperature/")
+setwd("E:/Postdoc Imperial/misc/COPDTempSVC/")
 
 
 
@@ -40,7 +40,7 @@ quantile(COPD_dat$temperature, prob = seq(from = .50, to = .95, by = .05))
 
 
 # Here we define thr to be the threshold of the model that minimizes the WAIC on step 1. 
-thr <- 8
+thr <- 7
 x.change <- tmp.quant[thr]
 
 
@@ -79,7 +79,7 @@ model_SVC <- nimbleCode(
     for(i in 1:N){
 
       O[i] ~ dpois(mu[i])
-      mu[i] <- exp(beta_tmp[i]*temperature[i] + inprod(beta[1:K.b], X[i,1:K.b]) + u[IDCC[i]])
+      mu[i] <- exp(beta_tmp[i]*temperature[i] + inprod(beta[1:K.b], X[i,1:K.b]) + u[IDCC[i]] + v[IDREC[i]])
       Q[i] <- step(temperature[i] - x.change)
       beta_tmp[i] <- (1 - Q[i])*b_tmp_low + Q[i]*b_tmp_SVC[ID.sp[i]]
 
@@ -93,14 +93,14 @@ model_SVC <- nimbleCode(
 
     for(m in 1:M){
       
-      b[m] <- v[m] + w[m]
+      b[m] <- phi[m] + w[m]
       
       if(adj_EM){
         b_tmp_SVC[m] <- b[m] + inprod(gamma[1:EM.b], Z[m,1:EM.b])
       }else{
         b_tmp_SVC[m] <- b[m]
       }
-      v[m] ~ dnorm(b_tmp_high, sd = sd.v)
+      phi[m] ~ dnorm(b_tmp_high, sd = sd.phi)
 
     }
 
@@ -113,6 +113,13 @@ model_SVC <- nimbleCode(
     beta[kb] ~ dnorm(0, sd = 1)
 
     }
+    
+    for(h in 1:H){
+      v[h] ~ dnorm(0, sd = sd.par) # to account for recurrent hospitalisations
+    }
+    
+    # prior for the hyperpar
+    sd.par ~ dgamma(shape = 1, rate = 2)
 
 
     # spatial effect modifiers
@@ -125,11 +132,11 @@ model_SVC <- nimbleCode(
     
     b_tmp_low ~ dnorm(0, sd = 1)
     b_tmp_low_unscaled <- b_tmp_low/x.sd
-    b_tmp_high ~ dnorm(0.01570643, sd = 0.004612425) # the posterior of the WAIC analysis to help convergence
+    b_tmp_high ~ dnorm(0.04253061, sd = 0.003896196) # the posterior of the WAIC analysis to help convergence
     b_tmp_high_unscaled <- b_tmp_high/x.sd
 
     # set the priors of the hyperparameter of the random effects
-    sd.v ~ dgamma(shape = 1, rate = 2)
+    sd.phi ~ dgamma(shape = 1, rate = 2)
     sd.w ~ dgamma(shape = 1, rate = 2)
     tau.w <- 1/(sd.w*sd.w)
 
@@ -146,9 +153,7 @@ model_SVC <- nimbleCode(
 N <- nrow(COPD_dat)
 J <- max(COPD_dat$ID)
 N.LTLA <- max(COPD_dat$ladid)
-
-
-
+H <- max(COPD_dat$ID.rec)
 
 
 
@@ -202,8 +207,10 @@ COPD_NIMBLE_constants <- list(
   N = N,
   J = J,
   K.b =  K.b,
+  H = H,
   IDCC = COPD_dat$ID,
   ID.sp = COPD_dat$ladid,
+  IDREC = COPD_dat$ID.rec,
 
   LM = length(nbWB_B$weights),
   M = nrow(shp),
@@ -236,11 +243,13 @@ if(adj_EM == TRUE){
     list(
       beta = rep(0, K.b),
       u = rep(0, times = J),
-      v = rep(0, times = nrow(shp)),
+      phi = rep(0, times = nrow(shp)),
       w = rep(0, times = nrow(shp)),
+      v = rep(0, times = H),
       gamma = rep(0, EM.b),
-      sd.v = 0.1, 
+      sd.phi = 0.1, 
       sd.w = 0.01,
+      sd.par = 0.1,
       b_tmp_low = 0, 
       b_tmp_high = 0
     )
@@ -250,7 +259,7 @@ if(adj_EM == TRUE){
   parameters = c("beta", "mu_keep", "u_keep", 
                  "b_tmp_low", "b_tmp_high", 
                  "b_tmp_low_unscaled","b_tmp_high_unscaled",
-                 "sd.v", "sd.w", "b", "gamma")
+                 "sd.phi", "sd.w", "b", "gamma", "sd.par")
   
   nam.store <- "adjusted"
   
@@ -260,10 +269,12 @@ if(adj_EM == TRUE){
     list(
       beta = rep(0, K.b),
       u = rep(0, times = J),
-      v = rep(0, times = nrow(shp)),
+      phi = rep(0, times = nrow(shp)),
       w = rep(0, times = nrow(shp)),
-      sd.v = 0.1, 
+      v = rep(0, times = H),
+      sd.phi = 0.1, 
       sd.w = 0.01,
+      sd.par = 0.1,
       b_tmp_low = 0, 
       b_tmp_high = 0
     )
@@ -273,7 +284,7 @@ if(adj_EM == TRUE){
   parameters = c("beta", "mu_keep", "u_keep", 
                  "b_tmp_low", "b_tmp_high", 
                  "b_tmp_low_unscaled","b_tmp_high_unscaled",
-                 "sd.v", "sd.w", "b")
+                 "sd.phi", "sd.w", "b", "sd.par")
   
   nam.store <- "unadjusted"
   
